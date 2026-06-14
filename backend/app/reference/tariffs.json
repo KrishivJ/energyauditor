@@ -1,0 +1,12 @@
+[
+  {
+    "id": "delhi-non-domestic",
+    "region": "Delhi (non-domestic)",
+    "low": 11,
+    "mid": 12,
+    "high": 13,
+    "currency": "INR",
+    "unit": "per kWh",
+    "note": "Per DERC Tariff Order F.17(86)/DERC/2024-25/TO/239 plus current PPAC; the avoidable marginal rate. Tariff is the softest input — confirm against an actual bill."
+  }
+]

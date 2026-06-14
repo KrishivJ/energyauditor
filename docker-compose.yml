@@ -1,0 +1,31 @@
+# Local dev stack (brief §3, DESIGN.md deviation D1: SQLite is a file on a
+# volume, so there is no separate db service). `docker compose up` brings up the
+# backend (FastAPI) and frontend (Vite dev server proxying /api to the backend).
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      BEL_DATA_DIR: /data
+      BEL_CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+    volumes:
+      - ./backend/app:/app/app # live reload of source in dev
+      - ./backend/fixtures:/app/fixtures
+      - bel_data:/data # SQLite db + uploaded files persist here
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_TARGET: "http://backend:8000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules # keep container's installed deps
+    depends_on:
+      - backend
+
+volumes:
+  bel_data:

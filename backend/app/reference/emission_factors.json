@@ -1,0 +1,9 @@
+[
+  {
+    "region": "India",
+    "factor": 0.7117,
+    "unit": "tCO2/MWh",
+    "source": "CEA CO2 Baseline Database for the Indian Power Sector, Version 21.0 (November 2025), all-India weighted average, FY 2024-25",
+    "year": 2025
+  }
+]

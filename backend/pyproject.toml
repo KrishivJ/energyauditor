@@ -1,0 +1,25 @@
+[project]
+name = "building-energy-lens-backend"
+version = "1.0.0"
+description = "Building Energy Lens — Stage 1 backend (FastAPI + analysis engine)"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+  "E501",  # long lines tolerated in dense engine math + docstrings
+  "B008",  # FastAPI Depends()/File() in argument defaults is the idiomatic pattern
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
