@@ -16,20 +16,24 @@ analysis engine, a React dashboard, and saved analyses persisted in SQLite.
 
 ## Quick start
 
-### Option A — Docker (recommended)
+Requirements: Python 3.11+ and Node 20+.
+
+### One command
 
 ```bash
-docker compose up --build
+./dev.sh
 ```
+
+Sets up the venv + npm deps on first run, then starts both servers:
 
 - Frontend: <http://localhost:5173>
 - Backend API + docs: <http://localhost:8000/api/health> · <http://localhost:8000/docs>
 
-SQLite and uploaded files persist in the `bel_data` volume.
+`Ctrl-C` stops both. SQLite and uploaded files persist under `backend/data/`.
 
-### Option B — run the two services directly
+### Or run the two services manually (two terminals)
 
-**Backend** (Python 3.11+):
+**Backend:**
 
 ```bash
 cd backend
@@ -38,13 +42,17 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-**Frontend** (Node 20+):
+**Frontend:**
 
 ```bash
 cd frontend
 npm install
 npm run dev          # http://localhost:5173 (proxies /api to :8000)
 ```
+
+> No Docker. SQLite is a single file and the two processes run directly, so a
+> container layer adds setup friction without buying anything in Stage 1. A
+> production deploy (Stage 2) would containerize the backend — noted in DESIGN.md.
 
 ---
 
@@ -113,7 +121,7 @@ faulty-voltage substitution, and solar exclusion.
   src/components/  Uploader, MappingPanel, ConfigPanel, Dashboard, charts
   src/pages/       NewAnalysis, SavedAnalyses, AnalysisView
   src/lib/api.ts   typed API client (the contract surface)
-docker-compose.yml   DESIGN.md
+dev.sh   DESIGN.md
 ```
 
 ### API

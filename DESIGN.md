@@ -22,14 +22,17 @@ authoritative; this file does not restate them, it confirms how they are wired.
 | Charts     | recharts (mix bars) + hand-rolled SVG load profile  | as recommended |
 | Upload     | react-dropzone                                      | as recommended |
 | API client | native fetch, typed                                 | see deviation D2 |
-| Dev        | docker-compose (frontend, backend); SQLite is a file | see deviation D1 |
+| Dev        | run both processes directly (`./dev.sh`); SQLite is a file | see deviation D1 |
 
 ### Deviations (with rationale)
-- **D1 — DB is a file, not a compose service.** SQLite is file-based, so there is
-  no separate `db` container in Stage 1. `docker-compose.yml` runs two services
-  (backend, frontend); the SQLite file lives on a mounted volume. A `db` service
-  is unnecessary until the Stage 2 PostgreSQL swap. The SQLAlchemy layer keeps
-  that swap a connection-string change.
+- **D1 — no Docker in Stage 1 (the brief recommended docker-compose).** SQLite is
+  a single file, so there is no DB service to containerize, and a "frontend
+  container" would only run `npm run dev`. For a single-machine local prototype
+  that the brief says need not deploy, a container layer adds setup friction
+  (Docker Desktop, volume wiring) and buys nothing. The two processes run
+  directly via `./dev.sh` or two terminals. The SQLAlchemy layer + `Storage`
+  interface keep the Stage 2 PostgreSQL/S3 swap a config change, and a backend
+  Dockerfile is a small, isolated addition when an actual deploy target exists.
 - **D2 — native `fetch`, not axios.** One fewer dependency; the typed client in
   `lib/api.ts` is the contract surface. `zod` is omitted for Stage 1 (TS types on
   the shared response shapes are sufficient); noted as an easy add.
