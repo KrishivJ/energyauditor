@@ -18,6 +18,11 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
+      # Pin Python so pip installs prebuilt wheels for pandas/numpy/scipy.
+      # Newer Pythons (e.g. 3.14) have no wheels for the pinned versions and
+      # force a slow, fragile source build (scipy needs Fortran/BLAS).
+      - key: PYTHON_VERSION
+        value: "3.12.8"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_JWT_SECRET
