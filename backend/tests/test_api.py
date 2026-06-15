@@ -12,14 +12,27 @@ from fastapi.testclient import TestClient
 
 from tests.synth import build_dataset
 
+# Mutable holder so a test can switch which user the auth dependency returns,
+# letting one TestClient exercise multi-user isolation.
+_CURRENT = {"id": "user-a", "email": "a@e.st"}
+
 
 @pytest.fixture(scope="module")
 def client():
     # env points at an isolated temp DB/storage via tests/conftest.py
+    from app.auth import CurrentUser, get_current_user
     from app.main import app
 
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        id=_CURRENT["id"], email=_CURRENT["email"]
+    )
     with TestClient(app) as c:
         yield c
+    app.dependency_overrides.clear()
+
+
+def _as_user(uid: str, email: str = "") -> None:
+    _CURRENT.update(id=uid, email=email or f"{uid}@e.st")
 
 
 def _upload(client, n=21):
@@ -96,3 +109,41 @@ def test_rejects_unsupported_file(client):
     files = [("files", ("notes.txt", io.BytesIO(b"hello"), "text/plain"))]
     r = client.post("/api/analyses", files=files)
     assert r.status_code == 400
+
+
+def test_user_isolation(client):
+    """One user's analysis is invisible and untouchable to another user."""
+    try:
+        _as_user("user-a")
+        aid = _upload(client, n=3).json()["analysisId"]
+        assert any(a["id"] == aid for a in client.get("/api/analyses").json())
+
+        # User B sees nothing of A's and cannot fetch or delete it (404, not 403).
+        _as_user("user-b")
+        assert all(a["id"] != aid for a in client.get("/api/analyses").json())
+        assert client.get(f"/api/analyses/{aid}").status_code == 404
+        assert client.put(f"/api/analyses/{aid}/config", json={}).status_code == 404
+        assert client.delete(f"/api/analyses/{aid}").status_code == 404
+
+        # A still owns it after B's probing.
+        _as_user("user-a")
+        assert client.get(f"/api/analyses/{aid}").status_code == 200
+        assert client.delete(f"/api/analyses/{aid}").json()["ok"] is True
+    finally:
+        _as_user("user-a")
+
+
+def test_requires_auth():
+    """Without the dependency override, a missing token is rejected with 401."""
+    from app.main import app
+
+    with TestClient(app) as raw:
+        # Temporarily drop the override to exercise the real dependency.
+        from app.auth import get_current_user
+
+        saved = app.dependency_overrides.pop(get_current_user, None)
+        try:
+            assert raw.get("/api/analyses").status_code == 401
+        finally:
+            if saved is not None:
+                app.dependency_overrides[get_current_user] = saved

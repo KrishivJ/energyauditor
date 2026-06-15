@@ -1,0 +1,32 @@
+# Render blueprint for the FastAPI backend (the Python analysis engine).
+# Create the service via Render → "New" → "Blueprint" pointed at this repo, or
+# configure a Web Service manually with the same build/start commands.
+#
+# Secrets (sync: false) are entered in the Render dashboard, never committed:
+#   SUPABASE_URL                 https://<ref>.supabase.co
+#   SUPABASE_JWT_SECRET          Settings → API → JWT Secret
+#   SUPABASE_SERVICE_ROLE_KEY    Settings → API → service_role key (server-only)
+#   BEL_DATABASE_URL             Settings → Database → Session-pooler URI,
+#                                rewritten to: postgresql+psycopg://USER:PWD@HOST:5432/postgres
+#   BEL_CORS_ORIGINS             https://<your-app>.vercel.app
+services:
+  - type: web
+    name: building-energy-lens-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: meter-files
+      - key: BEL_DATABASE_URL
+        sync: false
+      - key: BEL_CORS_ORIGINS
+        sync: false

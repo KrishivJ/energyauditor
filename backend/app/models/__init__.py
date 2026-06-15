@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
@@ -18,8 +18,11 @@ class Analysis(Base):
     __tablename__ = "analyses"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    # Supabase user UUID — every analysis belongs to exactly one user; queries
+    # are always scoped by this so users never see each other's analyses.
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
     name: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(default=_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     # uploaded | configured | complete | error
     status: Mapped[str] = mapped_column(String(20), default="uploaded")
     config_json: Mapped[str | None] = mapped_column(Text, nullable=True)

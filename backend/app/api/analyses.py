@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..auth import CurrentUser, get_current_user
 from ..config import ALLOWED_EXTENSIONS, MAX_UPLOAD_MB
 from ..db import get_db
 from ..ingestion.parse import parse_file
@@ -29,21 +30,34 @@ from ..storage import storage
 router = APIRouter(prefix="/api/analyses", tags=["analyses"])
 
 
-def _get_or_404(db: Session, analysis_id: str) -> Analysis:
+def _get_owned_or_404(db: Session, analysis_id: str, user_id: str) -> Analysis:
+    """Fetch an analysis only if it belongs to ``user_id``.
+
+    Returns 404 (not 403) for someone else's analysis so existence isn't leaked.
+    """
     a = db.get(Analysis, analysis_id)
-    if a is None:
+    if a is None or a.user_id != user_id:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return a
 
 
 @router.post("", response_model=UploadResponse)
-async def create_analysis(files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+async def create_analysis(
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
     analysis_id = str(uuid.uuid4())
     default_name = Path(files[0].filename or "analysis").stem
-    analysis = Analysis(id=analysis_id, name=f"Analysis — {default_name}", status="uploaded")
+    analysis = Analysis(
+        id=analysis_id,
+        user_id=user.id,
+        name=f"Analysis — {default_name}",
+        status="uploaded",
+    )
     db.add(analysis)
 
     metas, warnings = [], []
@@ -84,8 +98,10 @@ async def create_analysis(files: list[UploadFile] = File(...), db: Session = Dep
 
 
 @router.get("", response_model=list[AnalysisSummary])
-def list_analyses(db: Session = Depends(get_db)):
-    rows = db.scalars(select(Analysis).order_by(Analysis.created_at.desc())).all()
+def list_analyses(db: Session = Depends(get_db), user: CurrentUser = Depends(get_current_user)):
+    rows = db.scalars(
+        select(Analysis).where(Analysis.user_id == user.id).order_by(Analysis.created_at.desc())
+    ).all()
     return [
         AnalysisSummary(id=a.id, name=a.name, createdAt=a.created_at.isoformat(), status=a.status)
         for a in rows
@@ -93,8 +109,12 @@ def list_analyses(db: Session = Depends(get_db)):
 
 
 @router.get("/{analysis_id}", response_model=AnalysisDetail)
-def get_analysis(analysis_id: str, db: Session = Depends(get_db)):
-    a = _get_or_404(db, analysis_id)
+def get_analysis(
+    analysis_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    a = _get_owned_or_404(db, analysis_id, user.id)
     config = AnalysisConfig.model_validate_json(a.config_json) if a.config_json else None
     results = ResultsOut.model_validate_json(a.results_json) if a.results_json else None
     return AnalysisDetail(
@@ -109,8 +129,13 @@ def get_analysis(analysis_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/{analysis_id}/config", response_model=OkResponse)
-def set_config(analysis_id: str, config: AnalysisConfig, db: Session = Depends(get_db)):
-    a = _get_or_404(db, analysis_id)
+def set_config(
+    analysis_id: str,
+    config: AnalysisConfig,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    a = _get_owned_or_404(db, analysis_id, user.id)
     a.config_json = config.model_dump_json()
     if a.status == "uploaded":
         a.status = "configured"
@@ -119,8 +144,12 @@ def set_config(analysis_id: str, config: AnalysisConfig, db: Session = Depends(g
 
 
 @router.post("/{analysis_id}/run", response_model=RunResponse)
-def run(analysis_id: str, db: Session = Depends(get_db)):
-    a = _get_or_404(db, analysis_id)
+def run(
+    analysis_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    a = _get_owned_or_404(db, analysis_id, user.id)
     config = (
         AnalysisConfig.model_validate_json(a.config_json) if a.config_json else AnalysisConfig()
     )
@@ -134,8 +163,12 @@ def run(analysis_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/{analysis_id}", response_model=OkResponse)
-def delete_analysis(analysis_id: str, db: Session = Depends(get_db)):
-    a = _get_or_404(db, analysis_id)
+def delete_analysis(
+    analysis_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    a = _get_owned_or_404(db, analysis_id, user.id)
     db.delete(a)
     db.commit()
     storage.delete_analysis(analysis_id)

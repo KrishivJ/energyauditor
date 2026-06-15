@@ -1,5 +1,8 @@
-// Hand-rolled SVG diurnal load profile (brief §3 keeps the prototype's chart).
-// Two lines: working days (amber) vs off days (cool blue), mean kW by hour.
+// Hand-rolled SVG diurnal load profile. Two lines: working days (amber) vs off
+// days (cool blue), mean kW by hour. Lines draw in on mount; hovering shows a
+// crosshair, dots and a tooltip reading both series at that hour.
+
+import { useRef, useState } from "react";
 
 export default function LoadProfileChart({
   working,
@@ -33,13 +36,33 @@ export default function LoadProfileChart({
       .join(" ");
 
   const yTicks = 4;
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hover, setHover] = useState<number | null>(null);
+
+  const onMove = (e: React.MouseEvent) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const px = ((e.clientX - rect.left) / rect.width) * W;
+    const h = Math.round(((px - padL) / innerW) * 23);
+    setHover(Math.max(0, Math.min(23, h)));
+  };
+
+  // Tooltip box geometry, clamped so it never spills past the plot edges.
+  const tipW = 116;
+  const tipH = 54;
+  const tipX = hover === null ? 0 : Math.min(W - padR - tipW, Math.max(padL, x(hover) + 10));
+  const tipY = padT + 6;
 
   return (
     <svg
+      ref={svgRef}
       viewBox={`0 0 ${W} ${H}`}
-      className="w-full"
+      className="w-full select-none"
       role="img"
       aria-label="Load profile by hour"
+      onMouseMove={onMove}
+      onMouseLeave={() => setHover(null)}
     >
       {/* occupied window shading */}
       <rect
@@ -88,8 +111,69 @@ export default function LoadProfileChart({
           {String(h).padStart(2, "0")}
         </text>
       ))}
-      <path d={path(off)} fill="none" stroke="#5b8fc7" strokeWidth={2} />
-      <path d={path(working)} fill="none" stroke="#f4b740" strokeWidth={2} />
+
+      {/* lines (draw in on mount via stroke-dashoffset) */}
+      <path
+        className="anim-draw"
+        pathLength={1}
+        d={path(off)}
+        fill="none"
+        stroke="#5b8fc7"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        className="anim-draw"
+        pathLength={1}
+        style={{ animationDelay: "0.15s" }}
+        d={path(working)}
+        fill="none"
+        stroke="#f4b740"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* hover crosshair + markers + tooltip */}
+      {hover !== null && (
+        <g>
+          <line
+            x1={x(hover)}
+            x2={x(hover)}
+            y1={padT}
+            y2={padT + innerH}
+            stroke="#7c93a3"
+            strokeWidth={1}
+            strokeDasharray="3 3"
+          />
+          <circle cx={x(hover)} cy={y(off[hover])} r={3.5} fill="#5b8fc7" />
+          <circle cx={x(hover)} cy={y(working[hover])} r={3.5} fill="#f4b740" />
+          <g className="anim-fade-in">
+            <rect
+              x={tipX}
+              y={tipY}
+              width={tipW}
+              height={tipH}
+              rx={6}
+              fill="#0c1116"
+              stroke="#22323f"
+            />
+            <text x={tipX + 10} y={tipY + 17} fontSize={11} fill="#e6edf3">
+              {String(hover).padStart(2, "0")}:00
+            </text>
+            <circle cx={tipX + 12} cy={tipY + 31} r={3} fill="#f4b740" />
+            <text x={tipX + 22} y={tipY + 34} fontSize={10} fill="#c7d3dc">
+              Working {Math.round(working[hover])} kW
+            </text>
+            <circle cx={tipX + 12} cy={tipY + 45} r={3} fill="#5b8fc7" />
+            <text x={tipX + 22} y={tipY + 48} fontSize={10} fill="#c7d3dc">
+              Off {Math.round(off[hover])} kW
+            </text>
+          </g>
+        </g>
+      )}
+
       {/* legend */}
       <g transform={`translate(${W - 180},${padT + 4})`} fontSize={11}>
         <rect x={0} y={-8} width={10} height={3} fill="#f4b740" />

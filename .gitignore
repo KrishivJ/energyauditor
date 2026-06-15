@@ -25,6 +25,8 @@ backend/fixtures/bsc/expected_outputs.json
 # Env / editor / OS
 .env
 .env.*
+!.env.example
+!frontend/.env.example
 .DS_Store
 .idea/
 .vscode/

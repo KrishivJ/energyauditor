@@ -14,7 +14,8 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from .config import DATABASE_URL
 
 _connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=_connect_args, future=True)
+# pool_pre_ping recycles connections dropped by the Supabase connection pooler.
+engine = create_engine(DATABASE_URL, connect_args=_connect_args, pool_pre_ping=True, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 
 

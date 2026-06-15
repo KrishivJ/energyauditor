@@ -1,5 +1,13 @@
 // Typed API client — mirrors backend app/schemas (the contract). Uses native
-// fetch against same-origin /api (Vite proxies to the backend in dev).
+// fetch with the signed-in user's Supabase access token attached as a bearer
+// token, so the backend can scope every request to that user.
+//
+// In dev, VITE_API_BASE is empty → requests hit same-origin /api (Vite proxies
+// to the backend). In prod it's the backend's URL (e.g. the Render service).
+
+import { supabase } from "./supabase";
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export type Band = { low: number; mid: number; high: number };
 
@@ -123,6 +131,8 @@ export type TariffPreset = {
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
+    if (res.status === 401)
+      throw new Error("Your session expired — please log in again.");
     let detail = res.statusText;
     try {
       detail = (await res.json()).detail ?? detail;
@@ -134,33 +144,50 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// fetch wrapper that prefixes the API base and attaches the Supabase bearer
+// token. For FormData bodies we leave Content-Type unset so the browser adds the
+// multipart boundary itself.
+async function authedFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const headers = new Headers(init.headers);
+  if (session) headers.set("Authorization", `Bearer ${session.access_token}`);
+  return fetch(`${API_BASE}${path}`, { ...init, headers });
+}
+
 export const api = {
   upload: (files: File[]) => {
     const fd = new FormData();
     files.forEach((f) => fd.append("files", f));
-    return fetch("/api/analyses", { method: "POST", body: fd }).then(
+    return authedFetch("/api/analyses", { method: "POST", body: fd }).then(
       json<UploadResponse>,
     );
   },
-  list: () => fetch("/api/analyses").then(json<AnalysisSummary[]>),
-  get: (id: string) => fetch(`/api/analyses/${id}`).then(json<AnalysisDetail>),
+  list: () => authedFetch("/api/analyses").then(json<AnalysisSummary[]>),
+  get: (id: string) =>
+    authedFetch(`/api/analyses/${id}`).then(json<AnalysisDetail>),
   setConfig: (id: string, config: AnalysisConfig) =>
-    fetch(`/api/analyses/${id}/config`, {
+    authedFetch(`/api/analyses/${id}/config`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
     }).then(json<{ ok: boolean }>),
   run: (id: string) =>
-    fetch(`/api/analyses/${id}/run`, { method: "POST" }).then(
+    authedFetch(`/api/analyses/${id}/run`, { method: "POST" }).then(
       json<{ results: Results }>,
     ),
   remove: (id: string) =>
-    fetch(`/api/analyses/${id}`, { method: "DELETE" }).then(
+    authedFetch(`/api/analyses/${id}`, { method: "DELETE" }).then(
       json<{ ok: boolean }>,
     ),
   emissionFactors: () =>
-    fetch("/api/reference/emission-factors").then(json<EmissionFactor[]>),
-  tariffs: () => fetch("/api/reference/tariffs").then(json<TariffPreset[]>),
+    authedFetch("/api/reference/emission-factors").then(json<EmissionFactor[]>),
+  tariffs: () =>
+    authedFetch("/api/reference/tariffs").then(json<TariffPreset[]>),
 };
 
 export const LOAD_TYPE_COLOR: Record<string, string> = {

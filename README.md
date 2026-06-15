@@ -18,6 +18,12 @@ analysis engine, a React dashboard, and saved analyses persisted in SQLite.
 
 Requirements: Python 3.11+ and Node 20+.
 
+> **First-time setup:** the app needs Supabase auth configured to run. Copy
+> `frontend/.env.example` → `frontend/.env.local` and fill in your Supabase URL +
+> anon key, and export `SUPABASE_URL` / `SUPABASE_JWT_SECRET` for the backend
+> (see [Configuration](#configuration-env-vars) and [Deploy](#deploy-supabase--render--vercel)).
+> The test suite needs none of this — it runs in local SQLite mode.
+
 ### One command
 
 ```bash
@@ -137,29 +143,86 @@ dev.sh   DESIGN.md
 | `GET` | `/api/reference/emission-factors` · `/api/reference/tariffs` | bundled presets |
 | `GET` | `/api/health` | health check |
 
+All `/api/analyses` routes require an `Authorization: Bearer <token>` header and
+are scoped to that user; `/api/reference/*` and `/api/health` are public.
 Interactive docs at `/docs` when the backend is running.
 
 ---
 
 ## Configuration (env vars)
 
+**Backend** (`backend/`):
+
 | Var | Default | Meaning |
 |---|---|---|
-| `BEL_DATABASE_URL` | `sqlite:///backend/data/app.db` | SQLAlchemy connection string |
-| `BEL_DATA_DIR` | `backend/data` | base dir for the DB + uploads |
-| `BEL_STORAGE_DIR` | `<data>/uploads` | uploaded meter files |
+| `BEL_DATABASE_URL` | `sqlite:///backend/data/app.db` | SQLAlchemy connection string (Postgres in prod) |
+| `BEL_DATA_DIR` | `backend/data` | base dir for the DB + uploads (local mode) |
+| `BEL_STORAGE_DIR` | `<data>/uploads` | uploaded meter files (local mode) |
 | `BEL_CORS_ORIGINS` | `http://localhost:5173,...` | allowed frontend origins |
 | `BEL_MAX_UPLOAD_MB` | `25` | per-file upload limit |
+| `SUPABASE_URL` | _(unset → local mode)_ | Supabase project URL; enables JWT auth + bucket storage |
+| `SUPABASE_JWT_SECRET` | _(unset)_ | HS256 secret used to verify access tokens (Settings → API) |
+| `SUPABASE_SERVICE_ROLE_KEY` | _(unset)_ | server-only key for Storage uploads (never sent to the browser) |
+| `SUPABASE_STORAGE_BUCKET` | `meter-files` | private bucket for uploaded meter files |
+
+**Frontend** (`frontend/`, `VITE_`-prefixed → bundled into the browser, public):
+
+| Var | Default | Meaning |
+|---|---|---|
+| `VITE_SUPABASE_URL` | — | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | — | Supabase anon/publishable key (public) |
+| `VITE_API_BASE` | `""` | backend base URL in prod; empty in dev → uses the Vite proxy |
 | `VITE_API_TARGET` | `http://localhost:8000` | backend target for the dev proxy |
 
-No secrets are required or stored in the repo.
+> **Local mode vs. Supabase mode.** With no `SUPABASE_*` vars set, the backend
+> runs on SQLite + local-disk storage (handy for the test suite), but the
+> `/api/analyses` routes require a valid token, so the **app** needs Supabase
+> auth configured to be usable. The browser only ever holds the **anon** key;
+> the **service-role** key and DB credentials live only on the backend host.
 
 ---
 
-## Stage 2 (out of scope here, noted for later)
+## Authentication & multi-user
 
-User accounts/auth · live carbon-intensity & tariff APIs (Electricity Maps,
-WattTime, Open-Meteo) · weather/degree-day HVAC normalisation · the mixed-circuit
-NNLS cooling split (interface hook present, off by default) · background
-processing (Celery/RQ) · PostgreSQL (connection-string swap) · S3 storage
-(behind the existing `Storage` interface) · PDF export & month-over-month views.
+Each user signs up / logs in (Supabase Auth, email + password) and sees **only
+their own** analyses. The split:
+
+- **Frontend** uses `@supabase/supabase-js` only for auth (login, signup, token
+  refresh) and attaches the access token as a bearer token on every API call
+  (`src/lib/auth.tsx`, `src/lib/api.ts`).
+- **Backend** verifies that token on every `/api/analyses` route
+  (`app/auth.py`) and scopes every query to the token's user
+  (`Analysis.user_id`). Another user's analysis returns **404**, never their data.
+- The browser holds only the **anon** key. The **service-role** key and the
+  Postgres connection string live only on the backend host.
+
+## Deploy (Supabase → Render → Vercel)
+
+**1. Supabase** — create a project, then:
+- **Auth → Providers → Email**: enabled. **Auth → URL Configuration**: set Site
+  URL + redirect URLs to your Vercel domain and `http://localhost:5173`.
+- **Storage → New bucket** named `meter-files`, **private**. (No RLS policies
+  needed — the frontend never touches Storage/Postgres directly.)
+- Collect: Project URL, anon key, service-role key, JWT secret (Settings → API),
+  and the **Session-pooler** connection string (Settings → Database). Rewrite the
+  pooler URI to SQLAlchemy form: `postgresql+psycopg://USER:PWD@HOST:5432/postgres`.
+
+**2. Backend → Render** — `backend/render.yaml` is a ready blueprint (build
+`pip install -r requirements.txt`, start `uvicorn app.main:app`). Set
+`SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`,
+`BEL_DATABASE_URL` (the pooler URI), and `BEL_CORS_ORIGINS` (your Vercel domain).
+Tables are auto-created on first boot.
+
+**3. Frontend → Vercel** — import the repo with **Root Directory = `frontend`**
+(`frontend/vercel.json` handles the SPA rewrite). Set `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_ANON_KEY`, and `VITE_API_BASE` (the Render URL). Redeploy, then
+add the resulting Vercel URL back into Supabase's redirect URLs and Render's
+`BEL_CORS_ORIGINS`.
+
+## Stage 2+ (noted for later)
+
+Live carbon-intensity & tariff APIs (Electricity Maps, WattTime, Open-Meteo) ·
+weather/degree-day HVAC normalisation · the mixed-circuit NNLS cooling split
+(interface hook present, off by default) · background processing (Celery/RQ) ·
+Google/OAuth sign-in (easy add on the existing Supabase Auth) · PDF export &
+month-over-month views.
